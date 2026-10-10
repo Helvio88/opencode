@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import jsQR from "jsqr"
-import { renderAuthQr, renderAuthQrBlocks } from "../src/util/auth-qr"
+import { authorizationUrlShown, renderAuthQr, renderAuthQrBlocks } from "../src/util/auth-qr"
 
 const authorizationUrl = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
 
@@ -14,6 +14,14 @@ test("decodes the rendered QR matrix back to the authorization URL with the code
   expect(fromBlocks).toEqual(fromAnsi)
   expect(decode(fromAnsi)).toBe(authorizationUrl)
   expect(decode(fromBlocks)).toBe(authorizationUrl)
+})
+
+test("treats a prefilled device URL as already shown when the instructions contain that page", () => {
+  const url = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
+  const instructions = "Open https://accounts.x.ai/oauth2/device on any device and enter code: ABCD-EFGH"
+  expect(authorizationUrlShown(url, instructions)).toBe(true)
+  expect(authorizationUrlShown(url, "Authorize OpenAI")).toBe(false)
+  expect(authorizationUrlShown("https://example.com/authorize", "Open https://example.com/authorize")).toBe(true)
 })
 
 test("omits the QR when the terminal cannot fit the quiet zone", () => {

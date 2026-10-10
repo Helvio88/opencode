@@ -28,7 +28,7 @@ import { Link } from "../ui/link"
 import { useToast } from "../ui/toast"
 import { AuthQr } from "./auth-qr"
 import { errorMessage } from "../util/error"
-import { renderAuthQrBlocks } from "../util/auth-qr"
+import { authorizationUrlShown, renderAuthQrBlocks } from "../util/auth-qr"
 import {
   formInitialValues,
   formLabel,
@@ -796,8 +796,7 @@ function OAuthCode(props: {
       description={() => (
         <box gap={1}>
           <text fg={theme.text.muted}>{props.attempt.instructions}</text>
-          <Link href={props.attempt.url} fg={theme.markdown.link} />
-          <OauthQr url={props.attempt.url} rows={dimensions().height - 18} />
+          <OauthQr url={props.attempt.url} instructions={props.attempt.instructions} rows={dimensions().height - 18} />
           <Show when={error()}>{(value) => <text fg={theme.text.feedback.error.base}>{value()}</text>}</Show>
         </box>
       )}
@@ -820,13 +819,19 @@ function OAuthView(props: {
     const url = props.url
     if (!url) return
     const columns = Math.min(dialogWidth(dialog.size), dimensions().width - 2) - 4
-    // A wide terminal places the URL beside the QR. A narrower one stacks it, then drops it.
+    // A wide terminal places the code beside the text. A narrower one stacks it, then drops it.
     const beside = renderAuthQrBlocks(url, { columns: columns - 28, rows: dimensions().height - 8 })
     if (beside) return { direction: "row" as const, blocks: beside }
     const stacked = renderAuthQrBlocks(url, { columns, rows: dimensions().height - 14 })
     if (!stacked) return
     return { direction: "column" as const, blocks: stacked }
   })
+  const showLink = () => {
+    const url = props.url
+    if (!url) return false
+    if (qr()) return !authorizationUrlShown(url, props.instructions)
+    return !props.instructions?.includes(url)
+  }
   return (
     <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
       <box flexDirection="row" justifyContent="space-between">
@@ -839,15 +844,11 @@ function OAuthView(props: {
       </box>
       <box flexDirection={qr()?.direction ?? "column"} gap={2}>
         <box gap={1} flexShrink={1}>
-          <Show when={props.url}>
-            {(url) => (
-              <box gap={1}>
-                <Link href={url()} fg={theme.markdown.link} />
-                <Show when={props.instructions}>
-                  {(instructions) => <text fg={theme.text.muted}>{instructions()}</text>}
-                </Show>
-              </box>
-            )}
+          <Show when={props.instructions}>
+            {(instructions) => <text fg={theme.text.muted}>{instructions()}</text>}
+          </Show>
+          <Show when={showLink() && !qr()}>
+            <Link href={props.url ?? ""} fg={theme.markdown.link} />
           </Show>
           <text fg={theme.text.muted}>{props.message}</text>
           <box flexDirection="row" gap={2}>
@@ -865,7 +866,11 @@ function OAuthView(props: {
         </box>
         <Show when={qr()?.blocks}>
           {(blocks) => (
-            <box flexShrink={0}>
+            <box flexShrink={0} gap={1}>
+              <text fg={theme.text.base}>Mobile sign-in</text>
+              <Show when={showLink()}>
+                <Link href={props.url ?? ""} fg={theme.markdown.link} />
+              </Show>
               <AuthQr blocks={blocks()} />
             </box>
           )}
@@ -875,9 +880,10 @@ function OAuthView(props: {
   )
 }
 
-function OauthQr(props: { url: string; rows: number }) {
+function OauthQr(props: { url: string; instructions?: string; rows: number }) {
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
+  const theme = useTheme().surface("dialog")
   const blocks = createMemo(() =>
     renderAuthQrBlocks(props.url, {
       columns: Math.min(dialogWidth(dialog.size), dimensions().width - 2) - 4,
@@ -885,8 +891,23 @@ function OauthQr(props: { url: string; rows: number }) {
     }),
   )
   return (
-    <Show when={blocks()}>
-      {(value) => <AuthQr blocks={value()} />}
+    <Show
+      when={blocks()}
+      fallback={
+        <Show when={!props.instructions?.includes(props.url)}>
+          <Link href={props.url} fg={theme.markdown.link} />
+        </Show>
+      }
+    >
+      {(value) => (
+        <box gap={1}>
+          <text fg={theme.text.base}>Mobile sign-in</text>
+          <Show when={!authorizationUrlShown(props.url, props.instructions)}>
+            <Link href={props.url} fg={theme.markdown.link} />
+          </Show>
+          <AuthQr blocks={value()} />
+        </box>
+      )}
     </Show>
   )
 }

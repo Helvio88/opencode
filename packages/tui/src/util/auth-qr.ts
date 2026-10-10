@@ -23,6 +23,16 @@ export function renderAuthQrBlocks(url: string, fit?: Fit) {
   return paint(data, blockModule)
 }
 
+// The QR section repeats a link only when that URL is not already on screen.
+// A prefilled device URL counts as shown when the instructions already contain
+// the same address without the user-code query.
+export function authorizationUrlShown(url: string, text?: string) {
+  if (!text) return false
+  if (text.includes(url)) return true
+  const bare = url.split(/[?#]/, 1)[0]
+  return bare !== url && text.includes(bare)
+}
+
 function modules(url: string, fit?: Fit) {
   const qr = encode(url, { ecc: "M", border: quietZone })
   if (fit?.columns !== undefined && qr.size > fit.columns) return

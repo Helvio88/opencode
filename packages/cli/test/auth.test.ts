@@ -209,7 +209,8 @@ describe("auth command", () => {
 
     const result = await cli(["auth", "login", input.id, "--server", server.url.toString(), ...input.args])
     expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" })
-    expect(result.stdout).toContain("https://example.com/authorize")
+    expect(result.stdout).toContain("Mobile sign-in")
+    expect(result.stdout.split("https://example.com/authorize").length - 1).toBe(1)
     const qr = renderAuthQr("https://example.com/authorize")
     if (!qr) throw new Error("expected a QR")
     expect(result.stdout).toContain(qr)
@@ -218,6 +219,52 @@ describe("auth command", () => {
     expect(requests).toContainEqual({ method: "POST", path: endpoint })
     expect(requests).toContainEqual({ method: "GET", path: `${endpoint}/con_oauth` })
     expect(requests).toContainEqual({ method: "DELETE", path: `${endpoint}/con_oauth` })
+  })
+
+  test("keeps a device URL once when the instructions already show that page", async () => {
+    const url = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
+    const instructions = "Open https://accounts.x.ai/oauth2/device on any device and enter code: ABCD-EFGH"
+    using server = authServer((request, endpoint) => {
+      if (endpoint.pathname === "/api/integration") {
+        return Response.json(
+          located([
+            {
+              id: "xai",
+              name: "xAI",
+              methods: [{ id: "device", type: "oauth", label: "SuperGrok Subscription" }],
+              connections: [],
+            },
+          ]),
+        )
+      }
+      if (endpoint.pathname === "/api/integration/xai/connect/oauth" && request.method === "POST") {
+        return Response.json(
+          located({
+            attemptID: "con_oauth",
+            url,
+            instructions,
+            mode: "auto",
+            time: { created: 1, expires: 2 },
+          }),
+        )
+      }
+      if (endpoint.pathname === "/api/integration/xai/connect/oauth/con_oauth" && request.method === "GET") {
+        return Response.json(located({ status: "complete", time: { created: 1, expires: 2 } }))
+      }
+      if (endpoint.pathname === "/api/integration/xai/connect/oauth/con_oauth" && request.method === "DELETE") {
+        return new Response(null, { status: 204 })
+      }
+      return new Response("Not found", { status: 404 })
+    })
+
+    const result = await cli(["auth", "login", "xai", "--method", "device", "--server", server.url.toString()])
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain("Mobile sign-in")
+    expect(result.stdout).toContain(instructions)
+    expect(result.stdout).not.toContain(url)
+    const qr = renderAuthQr(url)
+    if (!qr) throw new Error("expected a QR")
+    expect(result.stdout).toContain(qr)
   })
 
   test("reports OAuth status polling failures and cancels the attempt", async () => {

@@ -46,7 +46,8 @@ test("shows the authorization URL and a black-on-white QR when the terminal can 
     fixture.app.mockInput.pressEnter()
     await fixture.app.waitForFrame((frame) => frame.includes("Waiting for authorization"))
     const frame = fixture.app.captureCharFrame()
-    expect(frame).toContain(url)
+    expect(frame.split(url).length - 1).toBe(1)
+    expect(frame).toContain("Mobile sign-in")
     expect(frame).toContain("Authorize linear in your browser.")
     expect(frame).toContain(qr.split("\n")[0])
     const span = fixture.app
@@ -70,7 +71,37 @@ test("keeps the authorization URL and code when the terminal is too narrow for a
     const frame = fixture.app.captureCharFrame()
     expect(frame).toContain("https://linear.example.com/oauth")
     expect(frame).toContain("Authorize linear in your browser.")
+    expect(frame).not.toContain("Mobile sign-in")
     expect(frame).not.toContain("█")
+  } finally {
+    fixture.app.renderer.destroy()
+  }
+})
+
+test("does not repeat a device URL that the instructions already show", async () => {
+  const url = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
+  const instructions = "Open https://accounts.x.ai/oauth2/device on any device and enter code: ABCD-EFGH"
+  const qr = renderAuthQrBlocks(url)
+  if (!qr) throw new Error("expected a QR")
+  const fixture = await renderMcp({
+    width: 120,
+    height: 50,
+    url,
+    instructions,
+    label: "SuperGrok Subscription",
+  })
+
+  try {
+    await fixture.app.waitForFrame((frame) => frame.includes("Sign in required"))
+    fixture.app.mockInput.pressEnter()
+    await fixture.app.waitForFrame((frame) => frame.includes("Mobile sign-in"))
+    const frame = fixture.app.captureCharFrame()
+    expect(frame).toContain("Mobile sign-in")
+    expect(frame).toContain("Open https://accounts.x.ai/oauth2/device")
+    expect(frame).toContain("enter code: ABCD-EFGH")
+    expect(frame).not.toContain(url)
+    expect(frame.split("https://accounts.x.ai/oauth2/device").length - 1).toBe(1)
+    expect(frame).toContain(qr.split("\n")[0])
   } finally {
     fixture.app.renderer.destroy()
   }
@@ -108,6 +139,9 @@ async function renderMcp(options?: {
   location?: { directory: string; workspaceID?: string }
   width?: number
   height?: number
+  url?: string
+  instructions?: string
+  label?: string
 }) {
   const events = createEventStream()
   let oauth = 0
@@ -139,7 +173,7 @@ async function renderMcp(options?: {
           {
             id: "mcp_linear",
             name: "linear",
-            methods: [{ type: "oauth", id: "mcp_linear", label: "linear" }],
+            methods: [{ type: "oauth", id: "mcp_linear", label: options?.label ?? "linear" }],
             connections: [],
           },
         ],
@@ -151,8 +185,8 @@ async function renderMcp(options?: {
         data: {
           attemptID: "attempt_linear",
           mode: "auto",
-          url: "https://linear.example.com/oauth",
-          instructions: "Authorize linear in your browser.",
+          url: options?.url ?? "https://linear.example.com/oauth",
+          instructions: options?.instructions ?? "Authorize linear in your browser.",
         },
       })
     }
