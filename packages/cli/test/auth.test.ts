@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
+import { renderAuthQr } from "@opencode/tui/util/auth-qr"
 import { OPENCODE_VERSION } from "../src/version"
 import type { FormFields } from "@opencode/client"
 
@@ -209,6 +210,9 @@ describe("auth command", () => {
     const result = await cli(["auth", "login", input.id, "--server", server.url.toString(), ...input.args])
     expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: "" })
     expect(result.stdout).toContain("https://example.com/authorize")
+    const qr = renderAuthQr("https://example.com/authorize")
+    if (!qr) throw new Error("expected a QR")
+    expect(result.stdout).toContain(qr)
     expect(result.stdout).toContain(`Connected to ${input.id}`)
     expect(bodies).toEqual([{ methodID: input.method, ...(input.answer ? { answer: input.answer } : {}) }])
     expect(requests).toContainEqual({ method: "POST", path: endpoint })
