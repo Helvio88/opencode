@@ -3,6 +3,7 @@ import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { onMount } from "solid-js"
 import { DialogMcp } from "../../../src/component/dialog-mcp"
+import { renderAuthQrBlocks } from "../../../src/util/auth-qr"
 import { ConfigProvider } from "../../../src/config"
 import { ClientProvider } from "../../../src/context/client"
 import { DataProvider, useData } from "../../../src/context/data"
@@ -29,6 +30,78 @@ test.each(["enter", "space"])("starts OAuth with %s for an MCP server requiring 
 
     expect(fixture.oauth).toBe(1)
     expect(fixture.connect).toBe(0)
+  } finally {
+    fixture.app.renderer.destroy()
+  }
+})
+
+test("shows the authorization URL and a black-on-white QR when the terminal can fit it", async () => {
+  const url = "https://linear.example.com/oauth"
+  const qr = renderAuthQrBlocks(url)
+  if (!qr) throw new Error("expected a QR")
+  const fixture = await renderMcp({ width: 120, height: 50 })
+
+  try {
+    await fixture.app.waitForFrame((frame) => frame.includes("Sign in required"))
+    fixture.app.mockInput.pressEnter()
+    await fixture.app.waitForFrame((frame) => frame.includes("Waiting for authorization"))
+    const frame = fixture.app.captureCharFrame()
+    expect(frame.split(url).length - 1).toBe(1)
+    expect(frame).toContain("Mobile sign-in")
+    expect(frame).toContain("Authorize linear in your browser.")
+    expect(frame).toContain(qr.split("\n")[0])
+    const span = fixture.app
+      .captureSpans()
+      .lines.flatMap((line) => line.spans)
+      .find((item) => item.text.includes("█"))
+    expect(span?.fg.toInts().slice(0, 3)).toEqual([255, 255, 255])
+    expect(span?.bg.toInts().slice(0, 3)).toEqual([0, 0, 0])
+  } finally {
+    fixture.app.renderer.destroy()
+  }
+})
+
+test("keeps the authorization URL and code when the terminal is too narrow for a QR", async () => {
+  const fixture = await renderMcp({ width: 42, height: 40 })
+
+  try {
+    await fixture.app.waitForFrame((frame) => frame.includes("Sign in required"))
+    fixture.app.mockInput.pressEnter()
+    await fixture.app.waitForFrame((frame) => frame.includes("Waiting for authorization"))
+    const frame = fixture.app.captureCharFrame()
+    expect(frame).toContain("https://linear.example.com/oauth")
+    expect(frame).toContain("Authorize linear in your browser.")
+    expect(frame).not.toContain("Mobile sign-in")
+    expect(frame).not.toContain("█")
+  } finally {
+    fixture.app.renderer.destroy()
+  }
+})
+
+test("does not repeat a device URL that the instructions already show", async () => {
+  const url = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
+  const instructions = "Open https://accounts.x.ai/oauth2/device on any device and enter code: ABCD-EFGH"
+  const qr = renderAuthQrBlocks(url)
+  if (!qr) throw new Error("expected a QR")
+  const fixture = await renderMcp({
+    width: 120,
+    height: 50,
+    url,
+    instructions,
+    label: "SuperGrok Subscription",
+  })
+
+  try {
+    await fixture.app.waitForFrame((frame) => frame.includes("Sign in required"))
+    fixture.app.mockInput.pressEnter()
+    await fixture.app.waitForFrame((frame) => frame.includes("Mobile sign-in"))
+    const frame = fixture.app.captureCharFrame()
+    expect(frame).toContain("Mobile sign-in")
+    expect(frame).toContain("Open https://accounts.x.ai/oauth2/device")
+    expect(frame).toContain("enter code: ABCD-EFGH")
+    expect(frame).not.toContain(url)
+    expect(frame.split("https://accounts.x.ai/oauth2/device").length - 1).toBe(1)
+    expect(frame).toContain(qr.split("\n")[0])
   } finally {
     fixture.app.renderer.destroy()
   }
@@ -61,7 +134,15 @@ test("opens an investigation draft for a failed MCP server at its originating lo
   }
 })
 
-async function renderMcp(options?: { failed?: boolean; location?: { directory: string; workspaceID?: string } }) {
+async function renderMcp(options?: {
+  failed?: boolean
+  location?: { directory: string; workspaceID?: string }
+  width?: number
+  height?: number
+  url?: string
+  instructions?: string
+  label?: string
+}) {
   const events = createEventStream()
   let oauth = 0
   let connect = 0
@@ -92,7 +173,7 @@ async function renderMcp(options?: { failed?: boolean; location?: { directory: s
           {
             id: "mcp_linear",
             name: "linear",
-            methods: [{ type: "oauth", id: "mcp_linear", label: "linear" }],
+            methods: [{ type: "oauth", id: "mcp_linear", label: options?.label ?? "linear" }],
             connections: [],
           },
         ],
@@ -104,8 +185,8 @@ async function renderMcp(options?: { failed?: boolean; location?: { directory: s
         data: {
           attemptID: "attempt_linear",
           mode: "auto",
-          url: "https://linear.example.com/oauth",
-          instructions: "Authorize linear in your browser.",
+          url: options?.url ?? "https://linear.example.com/oauth",
+          instructions: options?.instructions ?? "Authorize linear in your browser.",
         },
       })
     }
@@ -159,7 +240,7 @@ async function renderMcp(options?: { failed?: boolean; location?: { directory: s
         </ConfigProvider>
       </TestTuiContexts>
     ),
-    { width: 100, height: 30, kittyKeyboard: true },
+    { width: options?.width ?? 100, height: options?.height ?? 30, kittyKeyboard: true },
   )
   app.renderer.start()
   return {

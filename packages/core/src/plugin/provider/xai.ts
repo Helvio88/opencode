@@ -61,7 +61,7 @@ const device = (app: App.Info) =>
               const lifetime = positiveSeconds(value.expires_in, 0)
               return {
                 mode: "auto" as const,
-                url: value.verification_uri_complete ?? value.verification_uri,
+                url: xaiAuthorizationUrl(value),
                 instructions: `Open ${value.verification_uri} on any device and enter code: ${value.user_code}`,
                 ...(lifetime ? { expiresAt: created + lifetime * 1000 } : {}),
                 callback: poll(value, app).pipe(Effect.flatMap((tokens) => credential(deviceMethodID, tokens))),
@@ -105,6 +105,19 @@ export const XAIPlugin = define({
     })
   }),
 })
+
+export function xaiAuthorizationUrl(device: {
+  verification_uri: string
+  verification_uri_complete?: string
+  user_code: string
+}) {
+  if (device.verification_uri_complete) return device.verification_uri_complete
+  if (!URL.canParse(device.verification_uri)) return device.verification_uri
+  const url = new URL(device.verification_uri)
+  if (url.searchParams.has("user_code")) return url.href
+  url.searchParams.set("user_code", device.user_code)
+  return url.href
+}
 
 function refresh(methodID: Integration.MethodID, value: Credential.OAuth, app: App.Info) {
   return request(

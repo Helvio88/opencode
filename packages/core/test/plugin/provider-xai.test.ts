@@ -1,10 +1,10 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Credential } from "@opencode/core/credential"
 import { Integration } from "@opencode/core/integration"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHost } from "@opencode/core/plugin/host"
-import { XAIPlugin } from "@opencode/core/plugin/provider/xai"
+import { xaiAuthorizationUrl, XAIPlugin } from "@opencode/core/plugin/provider/xai"
 import { Model } from "@opencode/core/model"
 import { Provider } from "@opencode/core/provider"
 import { testEffect } from "../lib/effect"
@@ -19,6 +19,23 @@ const addPlugin = Effect.fn(function* () {
 })
 
 describe("XAIPlugin", () => {
+  test("prefills the user code on the device authorization URL", () => {
+    const complete = "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH"
+    expect(
+      xaiAuthorizationUrl({
+        verification_uri: "https://accounts.x.ai/oauth2/device",
+        verification_uri_complete: complete,
+        user_code: "ABCD-EFGH",
+      }),
+    ).toBe(complete)
+    expect(
+      xaiAuthorizationUrl({
+        verification_uri: "https://accounts.x.ai/oauth2/device",
+        user_code: "ABCD-EFGH",
+      }),
+    ).toBe(complete)
+  })
+
   it.effect("registers device OAuth and API key methods", () =>
     Effect.gen(function* () {
       yield* addPlugin()
